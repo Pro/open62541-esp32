@@ -1,0 +1,4 @@
+[submodule "components/open62541/repo"]
+	path = components/open62541/repo
+	url = https://github.com/open62541/open62541.git
+	branch = master
