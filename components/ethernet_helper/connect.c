@@ -12,6 +12,7 @@
 #include "sdkconfig.h"
 #include "esp_event.h"
 #include "esp_wifi.h"
+#include "esp_eth_com.h"
 #if CONFIG_ETHERNET_HELPER_ETHERNET
 #include "esp_eth.h"
 #endif
@@ -74,7 +75,21 @@ esp_err_t ethernet_helper_connect(void)
         return ESP_ERR_INVALID_STATE;
     }
     s_connect_event_group = xEventGroupCreate();
+
+    #ifdef CONFIG_ETHERNET_HELPER_STATIC_IP4
+    ESP_ERROR_CHECK(tcpip_adapter_dhcpc_stop(TCPIP_ADAPTER_IF_STA));
+    tcpip_adapter_ip_info_t ipInfo;
+    ip4addr_aton(CONFIG_ETHERNET_HELPER_STATIC_IP4_ADDRESS, &ipInfo.ip);
+    ip4addr_aton(CONFIG_ETHERNET_HELPER_STATIC_IP4_GATEWAY, &ipInfo.gw);
+    ip4addr_aton(CONFIG_ETHERNET_HELPER_STATIC_IP4_NETMASK, &ipInfo.netmask);
+    /*IP4_ADDR(&ipInfo.ip, 10,200,2,153);
+    IP4_ADDR(&ipInfo.gw, 10,200,0,1);
+    IP4_ADDR(&ipInfo.netmask, 255,255,0,0);*/
+    ESP_ERROR_CHECK(tcpip_adapter_set_ip_info(TCPIP_ADAPTER_IF_STA, &ipInfo));
+    #endif
+
     start();
+
     ESP_ERROR_CHECK(esp_register_shutdown_handler(&stop));
     xEventGroupWaitBits(s_connect_event_group, CONNECTED_BITS, true, true, portMAX_DELAY);
     ESP_LOGI(TAG, "Connected to %s", s_connection_name);
@@ -144,6 +159,12 @@ static void start(void)
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
+
+#ifdef CONFIG_ETHERNET_HELPER_CUSTOM_HOSTNAME
+    ESP_LOGI(TAG, "Setting custom hostname %s", CONFIG_ETHERNET_HELPER_CUSTOM_HOSTNAME_STR);
+    ESP_ERROR_CHECK(tcpip_adapter_set_hostname(TCPIP_ADAPTER_IF_STA, CONFIG_ETHERNET_HELPER_CUSTOM_HOSTNAME_STR));
+#endif
+
     ESP_ERROR_CHECK(esp_wifi_connect());
     s_connection_name = CONFIG_EXAMPLE_WIFI_SSID;
 }

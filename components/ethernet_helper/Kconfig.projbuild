@@ -140,6 +140,51 @@ menu "Ethernet Helper Configuration"
         endif
     endif
 
+
+    if ETHERNET_HELPER_WIFI
+		config ETHERNET_HELPER_STATIC_IP4
+			bool "Static IPv4"
+			default n
+			help
+				If this option is enabled, you can define a static IP address. Otherwise DHCP will be used
+	endif
+
+
+	if ETHERNET_HELPER_STATIC_IP4
+
+		config ETHERNET_HELPER_STATIC_IP4_ADDRESS
+			string "Static IPv4 Address"
+			default "192.168.1.42"
+			help
+				Static IP Address
+
+		config ETHERNET_HELPER_STATIC_IP4_GATEWAY
+			string "Static IPv4 Gateway"
+			default "192.168.1.1"
+			help
+				Static IP Address Gateway
+
+		config ETHERNET_HELPER_STATIC_IP4_NETMASK
+			string "Static IPv4 Netmask"
+			default "255.255.255.0"
+			help
+				Static IP Address Netmask
+	endif
+
+	config ETHERNET_HELPER_CUSTOM_HOSTNAME
+		bool "Use custom hostname"
+		default n
+		help
+			If this option is enabled, you can define a custom hostname
+
+	if ETHERNET_HELPER_CUSTOM_HOSTNAME
+		config ETHERNET_HELPER_CUSTOM_HOSTNAME_STR
+			string "Hostname"
+			default "esp32-host"
+			help
+				Custom Hostname
+	endif
+
     config ETHERNET_HELPER_IPV6
         bool "Obtain IPv6 link-local address"
         depends on IDF_TARGET_ESP32

@@ -2,6 +2,9 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/components/open62541/repo" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/components/open62541/repo/deps/mdnsd" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/components/open62541/repo/deps/ua-nodeset" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/deps/open62541" vcs="Git" />
   </component>
 </project>

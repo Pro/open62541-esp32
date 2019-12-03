@@ -66,8 +66,15 @@ static void opcua_task(void *arg) {
 
     UA_ServerConfig_setMinimalCustomBuffer(config, 4840, 0, sendBufferSize, recvBufferSize);
 
-    // TODO: Change this hostname to one which is configured on your host and matches the IP of the ESP32 board
-    UA_String str = UA_STRING("opcua-esp");
+    #ifndef CONFIG_ETHERNET_HELPER_CUSTOM_HOSTNAME
+        #ifndef ETHERNET_HELPER_STATIC_IP4
+            #error You need to set a static IP or a custom hostname with menuconfig
+        #else
+        UA_String str = UA_STRING(CONFIG_ETHERNET_HELPER_STATIC_IP4_ADDRESS);
+        #endif
+    #else
+    UA_String str = UA_STRING(CONFIG_ETHERNET_HELPER_CUSTOM_HOSTNAME_STR);
+    #endif
     UA_ServerConfig_setCustomHostname(config, str);
 
     printf("xPortGetFreeHeapSize before create = %d bytes\n", xPortGetFreeHeapSize());
@@ -213,12 +220,8 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_event_handler_register(ETH_EVENT, ETHERNET_EVENT_DISCONNECTED, &disconnect_handler, &server));
 #endif // CONFIG_ETHERNET_HELPER_ETHERNET
 
-    /* This helper function configures Wi-Fi or Ethernet, as selected in menuconfig.
-     * Read "Establishing Wi-Fi or Ethernet Connection" section in
-     * examples/protocols/README.md for more information about this function.
-     */
-    ESP_ERROR_CHECK(ethernet_helper_connect());
-
     ESP_LOGI(TAG, "Waiting for wifi connection. OnConnect will start OPC UA...");
+
+    ESP_ERROR_CHECK(ethernet_helper_connect());
 
 }
