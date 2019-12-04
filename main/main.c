@@ -123,7 +123,7 @@ static void initialize_sntp(void)
     sntp_init();
 }
 
-static void obtain_time(void)
+static bool obtain_time(void)
 {
     initialize_sntp();
 
@@ -134,7 +134,7 @@ static void obtain_time(void)
     memset(&timeinfo, 0, sizeof(struct tm));
     int retry = 0;
     const int retry_count = 10;
-    while (sntp_get_sync_status() == SNTP_SYNC_STATUS_RESET && ++retry < retry_count) {
+    while (sntp_get_sync_status() == SNTP_SYNC_STATUS_RESET && ++retry <= retry_count) {
         ESP_LOGI(TAG, "Waiting for system time to be set... (%d/%d)", retry, retry_count);
         vTaskDelay(2000 / portTICK_PERIOD_MS);
         ESP_ERROR_CHECK(esp_task_wdt_reset());
@@ -142,6 +142,7 @@ static void obtain_time(void)
     time(&now);
     localtime_r(&now, &timeinfo);
     ESP_ERROR_CHECK(esp_task_wdt_delete(NULL));
+    return timeinfo.tm_year > (2016 - 1900);
 }
 
 static void connect_handler(void* arg, esp_event_base_t event_base,
@@ -156,10 +157,14 @@ static void connect_handler(void* arg, esp_event_base_t event_base,
     // Is time set? If not, tm_year will be (1970 - 1900).
     if (timeinfo.tm_year < (2016 - 1900)) {
         ESP_LOGI(TAG, "Time is not set yet. Connecting to WiFi and getting time over NTP.");
-        obtain_time();
+        if (!obtain_time()) {
+            ESP_LOGE(TAG, "Could not get time from NTP. Using default timestamp.");
+        }
         // update 'now' variable with current time
         time(&now);
     }
+    localtime_r(&now, &timeinfo);
+    ESP_LOGI(TAG, "Current time: %d-%02d-%02d %02d:%02d:%02d", timeinfo.tm_year + 1900, timeinfo.tm_mon+1, timeinfo.tm_mday, timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
 
     if (!serverCreated) {
         ESP_LOGI(TAG, "Starting OPC UA Task");

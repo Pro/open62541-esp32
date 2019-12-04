@@ -8,7 +8,7 @@ option(BUILD_SHARED_LIBS OFF)
 option(BUILD_TESTING OFF)
 
 # ESP32 is little endian
-add_definitions(-DUA_ENABLE_AMALGAMATION -DUA_ARCHITECTURE_FREERTOSLWIP)
+#add_definitions(-DUA_ENABLE_AMALGAMATION -DUA_ARCHITECTURE_FREERTOSLWIP -DUA_ARCHITECTURE_FREERTOSLWIP_POSIX_CLOCK)
 #add_definitions(-Wno-ignored-qualifiers)
 
 # Unfortunately the library performs install and export. Would
