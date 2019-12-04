@@ -38,6 +38,8 @@
 #include <esp_task_wdt.h>
 #include <esp_sntp.h>
 
+#define ENABLE_MDNS
+
 static const char *TAG = "MAIN";
 static const char *TAG_OPC = "OPC UA";
 
@@ -48,6 +50,31 @@ static bool serverCreated = false;
  * maintains its value when ESP32 wakes from deep sleep.
  */
 RTC_DATA_ATTR static int boot_count = 0;
+
+static UA_StatusCode
+UA_ServerConfig_setUriName(UA_ServerConfig *uaServerConfig, const char *uri, const char *name) {
+    // delete pre-initialized values
+    UA_String_deleteMembers(&uaServerConfig->applicationDescription.applicationUri);
+    UA_LocalizedText_deleteMembers(&uaServerConfig->applicationDescription.applicationName);
+
+    uaServerConfig->applicationDescription.applicationUri = UA_String_fromChars(uri);
+    uaServerConfig->applicationDescription.applicationName.locale = UA_STRING_NULL;
+    uaServerConfig->applicationDescription.applicationName.text = UA_String_fromChars(name);
+
+    for (size_t i = 0; i < uaServerConfig->endpointsSize; i++) {
+        UA_String_deleteMembers(&uaServerConfig->endpoints[i].server.applicationUri);
+        UA_LocalizedText_deleteMembers(
+                &uaServerConfig->endpoints[i].server.applicationName);
+
+        UA_String_copy(&uaServerConfig->applicationDescription.applicationUri,
+                       &uaServerConfig->endpoints[i].server.applicationUri);
+
+        UA_LocalizedText_copy(&uaServerConfig->applicationDescription.applicationName,
+                              &uaServerConfig->endpoints[i].server.applicationName);
+    }
+
+    return UA_STATUSCODE_GOOD;
+}
 
 static void opcua_task(void *arg) {
 
@@ -65,6 +92,29 @@ static void opcua_task(void *arg) {
     UA_ServerConfig *config = UA_Server_getConfig(server);
 
     UA_ServerConfig_setMinimalCustomBuffer(config, 4840, 0, sendBufferSize, recvBufferSize);
+
+    const char* appUri = "open62541.esp32.demo";
+    #ifdef ENABLE_MDNS
+    config->discovery.mdnsEnable = true;
+    config->discovery.mdns.mdnsServerName = UA_String_fromChars(appUri);
+    config->discovery.mdns.serverCapabilitiesSize = 2;
+    UA_String *caps = (UA_String *) UA_Array_new(2, &UA_TYPES[UA_TYPES_STRING]);
+    caps[0] = UA_String_fromChars("LDS");
+    caps[1] = UA_String_fromChars("NA");
+    config->discovery.mdns.serverCapabilities = caps;
+
+    // We need to set the default IP address for mDNS since internally it's not able to detect it.
+    tcpip_adapter_ip_info_t default_ip;
+    esp_err_t ret = tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_STA, &default_ip);
+    if ((ESP_OK == ret) && (default_ip.ip.addr != INADDR_ANY)) {
+        config->discovery.ipAddressListSize = 1;
+        config->discovery.ipAddressList = (uint32_t *)UA_malloc(sizeof(uint32_t)*config->discovery.ipAddressListSize);
+        memcpy(config->discovery.ipAddressList, &default_ip.ip.addr, sizeof(uint32_t));
+    } else {
+        ESP_LOGI(TAG_OPC, "Could not get default IP Address!");
+    }
+    #endif
+    UA_ServerConfig_setUriName(config, appUri, "open62541 ESP32 Demo");
 
     #ifndef CONFIG_ETHERNET_HELPER_CUSTOM_HOSTNAME
         #ifndef ETHERNET_HELPER_STATIC_IP4
