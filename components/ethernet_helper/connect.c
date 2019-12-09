@@ -82,10 +82,22 @@ esp_err_t ethernet_helper_connect(void)
     ip4addr_aton(CONFIG_ETHERNET_HELPER_STATIC_IP4_ADDRESS, &ipInfo.ip);
     ip4addr_aton(CONFIG_ETHERNET_HELPER_STATIC_IP4_GATEWAY, &ipInfo.gw);
     ip4addr_aton(CONFIG_ETHERNET_HELPER_STATIC_IP4_NETMASK, &ipInfo.netmask);
-    /*IP4_ADDR(&ipInfo.ip, 10,200,2,153);
-    IP4_ADDR(&ipInfo.gw, 10,200,0,1);
-    IP4_ADDR(&ipInfo.netmask, 255,255,0,0);*/
     ESP_ERROR_CHECK(tcpip_adapter_set_ip_info(TCPIP_ADAPTER_IF_STA, &ipInfo));
+
+    if (strlen(CONFIG_ETHERNET_HELPER_STATIC_DNS_MAIN) > 0) {
+        tcpip_adapter_dns_info_t dns_info;
+        ip4_addr_t ip;
+        ip4addr_aton(CONFIG_ETHERNET_HELPER_STATIC_DNS_MAIN, &ip);
+        ip_addr_set_ip4_u32(&dns_info.ip, ip.addr);
+        ESP_ERROR_CHECK(tcpip_adapter_set_dns_info(TCPIP_ADAPTER_IF_STA, TCPIP_ADAPTER_DNS_MAIN, &dns_info));
+    }
+    if (strlen(CONFIG_ETHERNET_HELPER_STATIC_DNS_FALLBACK) > 0) {
+        tcpip_adapter_dns_info_t dns_info;
+        ip4_addr_t ip;
+        ip4addr_aton(CONFIG_ETHERNET_HELPER_STATIC_DNS_FALLBACK, &ip);
+        ip_addr_set_ip4_u32(&dns_info.ip, ip.addr);
+        ESP_ERROR_CHECK(tcpip_adapter_set_dns_info(TCPIP_ADAPTER_IF_STA, TCPIP_ADAPTER_DNS_FALLBACK, &dns_info));
+    }
     #endif
 
     start();

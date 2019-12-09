@@ -169,6 +169,18 @@ menu "Ethernet Helper Configuration"
 			default "255.255.255.0"
 			help
 				Static IP Address Netmask
+
+		config ETHERNET_HELPER_STATIC_DNS_MAIN
+			string "Main DNS Address"
+			default "8.8.8.8"
+			help
+				Main DNS Server IP Address
+
+		config ETHERNET_HELPER_STATIC_DNS_FALLBACK
+			string "Fallback DNS Address (empty for disable)"
+			default ""
+			help
+				Fallback DNS Server IP Address
 	endif
 
 	config ETHERNET_HELPER_CUSTOM_HOSTNAME
