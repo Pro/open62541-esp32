@@ -55,6 +55,7 @@ There you need to set at least the following options:
 1. Ethernet Helper Configuration  
     a. WiFi SSID  
     b. WiFi Password  
+    c. Use custom hostname (or Static IPv4 alternatively)
 2. Set the correct value for your Serial flasher config.
     a. Flash SPI Mode -> QIO  
     a. Flash SPI speed -> 40 Mhz  
