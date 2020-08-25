@@ -18,7 +18,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#include "tcpip_adapter.h"
+#include "esp_netif.h"
 #include "ethernet_helper.h"
 
 #ifdef CONFIG_IDF_TARGET_ESP32
@@ -95,21 +95,21 @@ static void opcua_task(void *arg) {
 
     const char* appUri = "open62541.esp32.demo";
     #ifdef ENABLE_MDNS
-    config->discovery.mdnsEnable = true;
-    config->discovery.mdns.mdnsServerName = UA_String_fromChars(appUri);
-    config->discovery.mdns.serverCapabilitiesSize = 2;
+    config->mdnsEnabled = true;
+    config->mdnsConfig.mdnsServerName = UA_String_fromChars(appUri);
+    config->mdnsConfig.serverCapabilitiesSize = 2;
     UA_String *caps = (UA_String *) UA_Array_new(2, &UA_TYPES[UA_TYPES_STRING]);
     caps[0] = UA_String_fromChars("LDS");
     caps[1] = UA_String_fromChars("NA");
-    config->discovery.mdns.serverCapabilities = caps;
+    config->mdnsConfig.serverCapabilities = caps;
 
     // We need to set the default IP address for mDNS since internally it's not able to detect it.
     tcpip_adapter_ip_info_t default_ip;
     esp_err_t ret = tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_STA, &default_ip);
     if ((ESP_OK == ret) && (default_ip.ip.addr != INADDR_ANY)) {
-        config->discovery.ipAddressListSize = 1;
-        config->discovery.ipAddressList = (uint32_t *)UA_malloc(sizeof(uint32_t)*config->discovery.ipAddressListSize);
-        memcpy(config->discovery.ipAddressList, &default_ip.ip.addr, sizeof(uint32_t));
+        config->mdnsIpAddressListSize = 1;
+        config->mdnsIpAddressList = (uint32_t *)UA_malloc(sizeof(uint32_t)*config->mdnsIpAddressListSize);
+        memcpy(config->mdnsIpAddressList, &default_ip.ip.addr, sizeof(uint32_t));
     } else {
         ESP_LOGI(TAG_OPC, "Could not get default IP Address!");
     }
@@ -125,7 +125,8 @@ static void opcua_task(void *arg) {
     #else
     UA_String str = UA_STRING(CONFIG_ETHERNET_HELPER_CUSTOM_HOSTNAME_STR);
     #endif
-    UA_ServerConfig_setCustomHostname(config, str);
+    UA_String_clear(&config->customHostname);
+    UA_String_copy(&str, &config->customHostname);
 
     printf("xPortGetFreeHeapSize before create = %d bytes\n", xPortGetFreeHeapSize());
 
@@ -255,7 +256,7 @@ void app_main(void)
     //static UA_Server *server = NULL;
 
     ESP_ERROR_CHECK(nvs_flash_init());
-    tcpip_adapter_init();
+    esp_netif_init();
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
     ESP_ERROR_CHECK(esp_task_wdt_init(10, true));

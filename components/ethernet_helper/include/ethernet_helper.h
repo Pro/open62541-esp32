@@ -14,14 +14,14 @@ extern "C" {
 #endif
 
 #include "esp_err.h"
-#include "tcpip_adapter.h"
+#include "esp_netif.h"
 
 #ifdef CONFIG_EXAMPLE_CONNECT_ETHERNET
-#define EXAMPLE_INTERFACE TCPIP_ADAPTER_IF_ETH
+#define EXAMPLE_INTERFACE get_example_netif()
 #endif
 
 #ifdef CONFIG_EXAMPLE_CONNECT_WIFI
-#define EXAMPLE_INTERFACE TCPIP_ADAPTER_IF_STA
+#define EXAMPLE_INTERFACE get_example_netif()
 #endif
 
 /**
@@ -45,6 +45,22 @@ esp_err_t ethernet_helper_connect(void);
  * Counterpart to ethernet_helper_connect, de-initializes Wi-Fi or Ethernet
  */
 esp_err_t ethernet_helper_disconnect(void);
+
+/**
+ * @brief Configure stdin and stdout to use blocking I/O
+ *
+ * This helper function is used in ASIO examples. It wraps installing the
+ * UART driver and configuring VFS layer to use UART driver for console I/O.
+ */
+esp_err_t ethernet_helper_configure_stdin_stdout(void);
+
+/**
+ * @brief Returns esp-netif pointer created by example_connect()
+ *
+ */
+esp_netif_t *get_ethernet_helper_netif(void);
+
+void ethernet_helper_init_mdns();
 
 #ifdef __cplusplus
 }
