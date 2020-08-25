@@ -6,15 +6,17 @@ This repository shows an exemplary use of the open62541 OPC UA Server implementa
 
 I used for my implementation and tests the awesome TinyPICO board which provides a soapload of Flash and RAM.
 
+The used open62541 version is https://github.com/open62541/open62541/commit/5478e563159ecc3269ccce3d3088135776ca933a
+
 ## Install Dependencies
 
 Before you do anything else, make sure that you followed the Getting Started guide of the ESP IDF Framework, especially install all the dependencies:
 
 https://docs.espressif.com/projects/esp-idf/en/latest/get-started/
 
-**This example example only works with the newest 4.0 Version.**
+**This example example only works with the newest 4.1 Version.**
 
-I tested with branch `release/v4.0`
+I tested with branch `release/v4.1` (commit 5ef1b390026270503634ac3ec9f1ec2e364e23b2)
 
 The rest of this README assumes that the IDF_PATH and PATH environment variable are correctly set.
 
@@ -55,7 +57,7 @@ There you need to set at least the following options:
 1. Ethernet Helper Configuration  
     a. WiFi SSID  
     b. WiFi Password  
-    c. Use custom hostname (or Static IPv4 alternatively)
+    c. Use custom hostname (or Static IPv4 alternatively). It is recommended to use a hostname which ends with `.local` (e.g. "esp-opcua.local"). This allows other PCs to resolve the hostname using mDNS.
 2. Set the correct value for your Serial flasher config.
     a. Flash SPI Mode -> QIO  
     a. Flash SPI speed -> 40 Mhz  

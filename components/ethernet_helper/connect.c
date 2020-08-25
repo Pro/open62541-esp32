@@ -17,12 +17,13 @@
 #include "esp_eth.h"
 #endif
 #include "esp_log.h"
-#include "tcpip_adapter.h"
+#include "esp_netif.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 #include "lwip/err.h"
 #include "lwip/sys.h"
+#include "mdns.h"
 
 #define GOT_IPV4_BIT BIT(0)
 #define GOT_IPV6_BIT BIT(1)
@@ -34,11 +35,12 @@
 #endif
 
 static EventGroupHandle_t s_connect_event_group;
-static ip4_addr_t s_ip_addr;
+static esp_ip4_addr_t s_ip_addr;
 static const char *s_connection_name;
+static esp_netif_t *s_example_esp_netif = NULL;
 
 #ifdef CONFIG_ETHERNET_HELPER_IPV6
-static ip6_addr_t s_ipv6_addr;
+static esp_ip6_addr_t s_ipv6_addr;
 #endif
 
 static const char *TAG = "ethernet_helper";
@@ -63,6 +65,11 @@ static void on_got_ipv6(void *arg, esp_event_base_t event_base,
                         int32_t event_id, void *event_data)
 {
     ip_event_got_ip6_t *event = (ip_event_got_ip6_t *)event_data;
+    if (event->esp_netif != s_example_esp_netif) {
+        ESP_LOGD(TAG, "Got IPv6 from another netif: ignored");
+        return;
+    }
+    ESP_LOGI(TAG, "Got IPv6 event!");
     memcpy(&s_ipv6_addr, &event->ip6_info.ip, sizeof(s_ipv6_addr));
     xEventGroupSetBits(s_connect_event_group, GOT_IPV6_BIT);
 }
@@ -75,30 +82,6 @@ esp_err_t ethernet_helper_connect(void)
         return ESP_ERR_INVALID_STATE;
     }
     s_connect_event_group = xEventGroupCreate();
-
-    #ifdef CONFIG_ETHERNET_HELPER_STATIC_IP4
-    ESP_ERROR_CHECK(tcpip_adapter_dhcpc_stop(TCPIP_ADAPTER_IF_STA));
-    tcpip_adapter_ip_info_t ipInfo;
-    ip4addr_aton(CONFIG_ETHERNET_HELPER_STATIC_IP4_ADDRESS, &ipInfo.ip);
-    ip4addr_aton(CONFIG_ETHERNET_HELPER_STATIC_IP4_GATEWAY, &ipInfo.gw);
-    ip4addr_aton(CONFIG_ETHERNET_HELPER_STATIC_IP4_NETMASK, &ipInfo.netmask);
-    ESP_ERROR_CHECK(tcpip_adapter_set_ip_info(TCPIP_ADAPTER_IF_STA, &ipInfo));
-
-    if (strlen(CONFIG_ETHERNET_HELPER_STATIC_DNS_MAIN) > 0) {
-        tcpip_adapter_dns_info_t dns_info;
-        ip4_addr_t ip;
-        ip4addr_aton(CONFIG_ETHERNET_HELPER_STATIC_DNS_MAIN, &ip);
-        ip_addr_set_ip4_u32(&dns_info.ip, ip.addr);
-        ESP_ERROR_CHECK(tcpip_adapter_set_dns_info(TCPIP_ADAPTER_IF_STA, TCPIP_ADAPTER_DNS_MAIN, &dns_info));
-    }
-    if (strlen(CONFIG_ETHERNET_HELPER_STATIC_DNS_FALLBACK) > 0) {
-        tcpip_adapter_dns_info_t dns_info;
-        ip4_addr_t ip;
-        ip4addr_aton(CONFIG_ETHERNET_HELPER_STATIC_DNS_FALLBACK, &ip);
-        ip_addr_set_ip4_u32(&dns_info.ip, ip.addr);
-        ESP_ERROR_CHECK(tcpip_adapter_set_dns_info(TCPIP_ADAPTER_IF_STA, TCPIP_ADAPTER_DNS_FALLBACK, &dns_info));
-    }
-    #endif
 
     start();
 
@@ -125,6 +108,22 @@ esp_err_t ethernet_helper_disconnect(void)
     return ESP_OK;
 }
 
+void ethernet_helper_init_mdns() {
+
+#ifdef CONFIG_ETHERNET_HELPER_CUSTOM_HOSTNAME
+    char* hostname = CONFIG_ETHERNET_HELPER_CUSTOM_HOSTNAME_STR;
+#else
+    char* hostname = "TinyUA.local";
+#endif
+    //initialize mDNS
+    ESP_ERROR_CHECK( mdns_init() );
+    //set mDNS hostname (required if you want to advertise services)
+    ESP_ERROR_CHECK( mdns_hostname_set(hostname) );
+    ESP_LOGI(TAG, "mdns hostname set to: [%s]", hostname);
+    //set default mDNS instance name
+    //ESP_ERROR_CHECK( mdns_instance_name_set(EXAMPLE_MDNS_INSTANCE) );
+}
+
 #ifdef CONFIG_ETHERNET_HELPER_WIFI
 
 static void on_wifi_disconnect(void *arg, esp_event_base_t event_base,
@@ -140,10 +139,10 @@ static void on_wifi_disconnect(void *arg, esp_event_base_t event_base,
 
 #ifdef CONFIG_ETHERNET_HELPER_IPV6
 
-static void on_wifi_connect(void *arg, esp_event_base_t event_base,
+static void on_wifi_connect(void *esp_netif, esp_event_base_t event_base,
                             int32_t event_id, void *event_data)
 {
-    tcpip_adapter_create_ip6_linklocal(TCPIP_ADAPTER_IF_STA);
+    esp_netif_create_ip6_linklocal(esp_netif);
 }
 
 #endif // CONFIG_ETHERNET_HELPER_IPV6
@@ -153,18 +152,53 @@ static void start(void)
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
+    esp_netif_config_t netif_config = ESP_NETIF_DEFAULT_WIFI_STA();
+
+    esp_netif_t *netif = esp_netif_new(&netif_config);
+
+    assert(netif);
+
+    esp_netif_attach_wifi_station(netif);
+    esp_wifi_set_default_wifi_sta_handlers();
+
+    s_example_esp_netif = netif;
+
+    #ifdef CONFIG_ETHERNET_HELPER_STATIC_IP4
+    ESP_ERROR_CHECK(esp_netif_dhcpc_stop(get_ethernet_helper_netif()));
+    esp_netif_ip_info_t ipInfo;
+    ipInfo.ip.addr = esp_ip4addr_aton(CONFIG_ETHERNET_HELPER_STATIC_IP4_ADDRESS);
+    ipInfo.gw.addr = esp_ip4addr_aton(CONFIG_ETHERNET_HELPER_STATIC_IP4_GATEWAY);
+    ipInfo.netmask.addr = esp_ip4addr_aton(CONFIG_ETHERNET_HELPER_STATIC_IP4_NETMASK);
+    ESP_ERROR_CHECK(esp_netif_set_ip_info(get_ethernet_helper_netif(), &ipInfo));
+
+    if (strlen(CONFIG_ETHERNET_HELPER_STATIC_DNS_MAIN) > 0) {
+        esp_netif_dns_info_t dns_info;
+        ip4_addr_t ip;
+        ip.addr = esp_ip4addr_aton(CONFIG_ETHERNET_HELPER_STATIC_DNS_MAIN);
+        ip_addr_set_ip4_u32(&dns_info.ip, ip.addr);
+        ESP_ERROR_CHECK(esp_netif_set_dns_info(get_ethernet_helper_netif(), ESP_NETIF_DNS_MAIN, &dns_info));
+    }
+    if (strlen(CONFIG_ETHERNET_HELPER_STATIC_DNS_FALLBACK) > 0) {
+        esp_netif_dns_info_t dns_info;
+        ip4_addr_t ip;
+        ip.addr = esp_ip4addr_aton(CONFIG_ETHERNET_HELPER_STATIC_DNS_FALLBACK);
+        ip_addr_set_ip4_u32(&dns_info.ip, ip.addr);
+        ESP_ERROR_CHECK(esp_netif_set_dns_info(get_ethernet_helper_netif(), ESP_NETIF_DNS_FALLBACK, &dns_info));
+    }
+            #endif
+
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &on_wifi_disconnect, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &on_got_ip, NULL));
 #ifdef CONFIG_ETHERNET_HELPER_IPV6
-    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_CONNECTED, &on_wifi_connect, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_CONNECTED, &on_wifi_connect, netif));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_GOT_IP6, &on_got_ipv6, NULL));
 #endif
 
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
     wifi_config_t wifi_config = {
         .sta = {
-            .ssid = CONFIG_EXAMPLE_WIFI_SSID,
-            .password = CONFIG_EXAMPLE_WIFI_PASSWORD,
+            .ssid = CONFIG_ETHERNET_HELPER_WIFI_SSID,
+            .password = CONFIG_ETHERNET_HELPER_WIFI_PASSWORD,
         },
     };
     ESP_LOGI(TAG, "Connecting to %s...", wifi_config.sta.ssid);
@@ -174,11 +208,11 @@ static void start(void)
 
 #ifdef CONFIG_ETHERNET_HELPER_CUSTOM_HOSTNAME
     ESP_LOGI(TAG, "Setting custom hostname %s", CONFIG_ETHERNET_HELPER_CUSTOM_HOSTNAME_STR);
-    ESP_ERROR_CHECK(tcpip_adapter_set_hostname(TCPIP_ADAPTER_IF_STA, CONFIG_ETHERNET_HELPER_CUSTOM_HOSTNAME_STR));
+    ESP_ERROR_CHECK(esp_netif_set_hostname(get_ethernet_helper_netif(), CONFIG_ETHERNET_HELPER_CUSTOM_HOSTNAME_STR));
 #endif
 
     ESP_ERROR_CHECK(esp_wifi_connect());
-    s_connection_name = CONFIG_EXAMPLE_WIFI_SSID;
+    s_connection_name = CONFIG_ETHERNET_HELPER_WIFI_SSID;
 }
 
 static void stop(void)
@@ -195,6 +229,9 @@ static void stop(void)
     }
     ESP_ERROR_CHECK(err);
     ESP_ERROR_CHECK(esp_wifi_deinit());
+    ESP_ERROR_CHECK(esp_wifi_clear_default_wifi_driver_and_handlers(s_example_esp_netif));
+    esp_netif_destroy(s_example_esp_netif);
+    s_example_esp_netif = NULL;
 }
 #endif // CONFIG_ETHERNET_HELPER_WIFI
 
@@ -203,13 +240,13 @@ static void stop(void)
 #ifdef CONFIG_ETHERNET_HELPER_IPV6
 
 /** Event handler for Ethernet events */
-static void on_eth_event(void *arg, esp_event_base_t event_base,
+static void on_eth_event(void *esp_netif, esp_event_base_t event_base,
                          int32_t event_id, void *event_data)
 {
     switch (event_id) {
     case ETHERNET_EVENT_CONNECTED:
         ESP_LOGI(TAG, "Ethernet Link Up");
-        tcpip_adapter_create_ip6_linklocal(TCPIP_ADAPTER_IF_ETH);
+        esp_netif_create_ip6_linklocal(esp_netif);
         break;
     default:
         break;
@@ -224,57 +261,73 @@ static esp_eth_phy_t *s_phy = NULL;
 
 static void start(void)
 {
-    ESP_ERROR_CHECK(tcpip_adapter_set_default_eth_handlers());
+    esp_netif_config_t netif_config = ESP_NETIF_DEFAULT_ETH();
+    esp_netif_t *netif = esp_netif_new(&netif_config);
+    assert(netif);
+    s_example_esp_netif = netif;
+    // Set default handlers to process TCP/IP stuffs
+    ESP_ERROR_CHECK(esp_eth_set_default_handlers(netif));
+    // Register user defined event handers
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, &on_got_ip, NULL));
 #ifdef CONFIG_ETHERNET_HELPER_IPV6
-    ESP_ERROR_CHECK(esp_event_handler_register(ETH_EVENT, ETHERNET_EVENT_CONNECTED, &on_eth_event, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(ETH_EVENT, ETHERNET_EVENT_CONNECTED, &on_eth_event, netif));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_GOT_IP6, &on_got_ipv6, NULL));
 #endif
     eth_mac_config_t mac_config = ETH_MAC_DEFAULT_CONFIG();
     eth_phy_config_t phy_config = ETH_PHY_DEFAULT_CONFIG();
-#if CONFIG_EXAMPLE_USE_INTERNAL_ETHERNET
+    phy_config.phy_addr = CONFIG_ETHERNET_HELPER_ETH_PHY_ADDR;
+    phy_config.reset_gpio_num = CONFIG_ETHERNET_HELPER_ETH_PHY_RST_GPIO;
+#if CONFIG_ETHERNET_HELPER_USE_INTERNAL_ETHERNET
+    mac_config.smi_mdc_gpio_num = CONFIG_ETHERNET_HELPER_ETH_MDC_GPIO;
+    mac_config.smi_mdio_gpio_num = CONFIG_ETHERNET_HELPER_ETH_MDIO_GPIO;
     s_mac = esp_eth_mac_new_esp32(&mac_config);
-#if CONFIG_EXAMPLE_ETH_PHY_IP101
+#if CONFIG_ETHERNET_HELPER_ETH_PHY_IP101
     s_phy = esp_eth_phy_new_ip101(&phy_config);
-#elif CONFIG_EXAMPLE_ETH_PHY_RTL8201
+#elif CONFIG_ETHERNET_HELPER_ETH_PHY_RTL8201
     s_phy = esp_eth_phy_new_rtl8201(&phy_config);
-#elif CONFIG_EXAMPLE_ETH_PHY_LAN8720
+#elif CONFIG_ETHERNET_HELPER_ETH_PHY_LAN8720
     s_phy = esp_eth_phy_new_lan8720(&phy_config);
-#elif CONFIG_EXAMPLE_ETH_PHY_DP83848
+#elif CONFIG_ETHERNET_HELPER_ETH_PHY_DP83848
     s_phy = esp_eth_phy_new_dp83848(&phy_config);
 #endif
-#elif CONFIG_EXAMPLE_USE_SPI_ETHERNET
+#elif CONFIG_ETHERNET_HELPER_USE_DM9051
     gpio_install_isr_service(0);
     spi_device_handle_t spi_handle = NULL;
     spi_bus_config_t buscfg = {
-        .miso_io_num = CONFIG_EXAMPLE_ETH_MISO_GPIO,
-        .mosi_io_num = CONFIG_EXAMPLE_ETH_MOSI_GPIO,
-        .sclk_io_num = CONFIG_EXAMPLE_ETH_SCLK_GPIO,
+        .miso_io_num = CONFIG_ETHERNET_HELPER_DM9051_MISO_GPIO,
+        .mosi_io_num = CONFIG_ETHERNET_HELPER_DM9051_MOSI_GPIO,
+        .sclk_io_num = CONFIG_ETHERNET_HELPER_DM9051_SCLK_GPIO,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
     };
-    ESP_ERROR_CHECK(spi_bus_initialize(CONFIG_EXAMPLE_ETH_SPI_HOST, &buscfg, 1));
+    ESP_ERROR_CHECK(spi_bus_initialize(CONFIG_ETHERNET_HELPER_DM9051_SPI_HOST, &buscfg, 1));
     spi_device_interface_config_t devcfg = {
         .command_bits = 1,
         .address_bits = 7,
         .mode = 0,
-        .clock_speed_hz = CONFIG_EXAMPLE_ETH_SPI_CLOCK_MHZ * 1000 * 1000,
-        .spics_io_num = CONFIG_EXAMPLE_ETH_CS_GPIO,
+        .clock_speed_hz = CONFIG_ETHERNET_HELPER_DM9051_SPI_CLOCK_MHZ * 1000 * 1000,
+        .spics_io_num = CONFIG_ETHERNET_HELPER_DM9051_CS_GPIO,
         .queue_size = 20
     };
-    ESP_ERROR_CHECK(spi_bus_add_device(CONFIG_EXAMPLE_ETH_SPI_HOST, &devcfg, &spi_handle));
+    ESP_ERROR_CHECK(spi_bus_add_device(CONFIG_ETHERNET_HELPER_DM9051_SPI_HOST, &devcfg, &spi_handle));
     /* dm9051 ethernet driver is based on spi driver */
     eth_dm9051_config_t dm9051_config = ETH_DM9051_DEFAULT_CONFIG(spi_handle);
+    dm9051_config.int_gpio_num = CONFIG_ETHERNET_HELPER_DM9051_INT_GPIO;
     s_mac = esp_eth_mac_new_dm9051(&dm9051_config, &mac_config);
     s_phy = esp_eth_phy_new_dm9051(&phy_config);
-#elif CONFIG_EXAMPLE_USE_OPENETH
+#elif CONFIG_ETHERNET_HELPER_USE_OPENETH
     phy_config.autonego_timeout_ms = 100;
     s_mac = esp_eth_mac_new_openeth(&mac_config);
     s_phy = esp_eth_phy_new_dp83848(&phy_config);
 #endif
 
+    // Install Ethernet driver
     esp_eth_config_t config = ETH_DEFAULT_CONFIG(s_mac, s_phy);
     ESP_ERROR_CHECK(esp_eth_driver_install(&config, &s_eth_handle));
+    // combine driver with netif
+    s_eth_glue = esp_eth_new_netif_glue(s_eth_handle);
+    esp_netif_attach(netif, s_eth_glue);
+    esp_eth_start(s_eth_handle);
     s_connection_name = "Ethernet";
 }
 
@@ -285,9 +338,20 @@ static void stop(void)
     ESP_ERROR_CHECK(esp_event_handler_unregister(IP_EVENT, IP_EVENT_GOT_IP6, &on_got_ipv6));
     ESP_ERROR_CHECK(esp_event_handler_unregister(ETH_EVENT, ETHERNET_EVENT_CONNECTED, &on_eth_event));
 #endif
+    ESP_ERROR_CHECK(esp_eth_stop(s_eth_handle));
+    ESP_ERROR_CHECK(esp_eth_del_netif_glue(s_eth_glue));
+    ESP_ERROR_CHECK(esp_eth_clear_default_handlers(s_example_esp_netif));
     ESP_ERROR_CHECK(esp_eth_driver_uninstall(s_eth_handle));
     ESP_ERROR_CHECK(s_phy->del(s_phy));
     ESP_ERROR_CHECK(s_mac->del(s_mac));
+
+    esp_netif_destroy(s_example_esp_netif);
+    s_example_esp_netif = NULL;
 }
 
 #endif // CONFIG_ETHERNET_HELPER_ETHERNET
+
+esp_netif_t *get_ethernet_helper_netif(void)
+{
+    return s_example_esp_netif;
+}
