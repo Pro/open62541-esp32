@@ -258,6 +258,7 @@ static void on_eth_event(void *esp_netif, esp_event_base_t event_base,
 static esp_eth_handle_t s_eth_handle = NULL;
 static esp_eth_mac_t *s_mac = NULL;
 static esp_eth_phy_t *s_phy = NULL;
+static void *s_eth_glue = NULL;
 
 static void start(void)
 {
