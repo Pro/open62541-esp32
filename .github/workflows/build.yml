@@ -1,0 +1,28 @@
+name: 'build'
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        # Build with the following release/vX.Y branches of ESP-IDF:
+        idf_ver: ["v4.1", "v4.2", "v4.3"]
+        # Build for the following chip targets:
+        idf_target: ["esp32"]
+    runs-on: ubuntu-20.04
+    container: espressif/idf:release-${{ matrix.idf_ver }}
+    steps:
+      - uses: actions/checkout@v1
+        with:
+          submodules: recursive
+      - name: Build for ESP32
+        env:
+          IDF_TARGET: ${{ matrix.idf_target }}
+        shell: bash
+        run: |
+          . ${IDF_PATH}/export.sh
+          cat sdkconfig.defaults > sdkconfig
+          echo "CONFIG_ETHERNET_HELPER_CUSTOM_HOSTNAME=y" >> sdkconfig
+          echo "CONFIG_ETHERNET_HELPER_CUSTOM_HOSTNAME_STR=\"esp32-host.local\"" >> sdkconfig
+          idf.py build

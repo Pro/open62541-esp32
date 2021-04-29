@@ -1,14 +1,4 @@
 
-# This directory needs to exist, otherwise idf_component_register fails
-file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/open62541")
-
-# Create a dummy file so that idf_component_register succeeds
-if(NOT EXISTS "${CMAKE_BINARY_DIR}/open62541/open62541.c")
-    FILE(WRITE ${CMAKE_BINARY_DIR}/open62541/open62541.c
-         "#error open62541 not yet generated"
-         )
-endif()
-
 set(USE_ENCRYPTION OFF)
 
 set(ADDITIONAL_REQUIRES "")
@@ -17,11 +7,14 @@ if (USE_ENCRYPTION)
 endif()
 
 idf_component_register(
-        SRCS ${CMAKE_BINARY_DIR}/open62541/open62541.c custom_getaddrinfo.c
+        SRCS custom_getaddrinfo.c
         REQUIRES lwip vfs freertos ${ADDITIONAL_REQUIRES}
-        INCLUDE_DIRS ${CMAKE_BINARY_DIR}/open62541
         PRIV_INCLUDE_DIRS ${IDF_PATH}/components/freertos/include/freertos
 )
+
+set_property(SOURCE ${CMAKE_BINARY_DIR}/open62541/open62541.c PROPERTY GENERATED 1)
+target_sources(${COMPONENT_LIB} PRIVATE ${CMAKE_BINARY_DIR}/open62541/open62541.c)
+target_include_directories(${COMPONENT_LIB} PUBLIC ${CMAKE_BINARY_DIR}/open62541)
 
 set(open62541_OPTIONS
     "-DUA_ARCHITECTURE=freertosLWIP"
@@ -35,6 +28,7 @@ set(open62541_OPTIONS
     "-DUA_LOGLEVEL=300"
     "-DUA_ENABLE_NODESET_COMPILER_DESCRIPTIONS=OFF"
     "-DUA_FILE_NS0_BLACKLIST=${CMAKE_CURRENT_SOURCE_DIR}/../../nodes_blacklist.txt"
+    "-DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}"
 )
 
 
